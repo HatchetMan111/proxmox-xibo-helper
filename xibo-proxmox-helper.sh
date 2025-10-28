@@ -52,12 +52,17 @@ XIBO_PORT=${XIBO_PORT:-8080}
 
 echo -e "\n🚀 Starte Installation von ${APP} im Container #${CTID}...\n"
 
-# --- Template prüfen ---
-TEMPLATE="local:vztmpl/ubuntu-${OSVERSION}-standard_amd64.tar.zst"
-if ! pveam list local | grep -q "ubuntu-${OSVERSION}"; then
-  echo "📦 Lade Ubuntu ${OSVERSION} Template herunter..."
-  pveam download local ubuntu-${OSVERSION}-standard_amd64.tar.zst
+# --- Dynamisches Ubuntu-Template finden ---
+TEMPLATE_STORE=$(pvesm status | awk '/dir/ && /active/ {print $1; exit}')
+LATEST_TEMPLATE=$(pveam available | grep ubuntu | grep standard | tail -n 1 | awk '{print $2}')
+TEMPLATE="${TEMPLATE_STORE}:vztmpl/${LATEST_TEMPLATE}"
+
+# --- Template herunterladen falls nötig ---
+if ! pveam list $TEMPLATE_STORE | grep -q "$(basename $LATEST_TEMPLATE)"; then
+  echo "📦 Lade Ubuntu Template (${LATEST_TEMPLATE}) herunter..."
+  pveam download $TEMPLATE_STORE $LATEST_TEMPLATE
 fi
+
 
 # --- Container erstellen ---
 pct create $CTID $TEMPLATE \
