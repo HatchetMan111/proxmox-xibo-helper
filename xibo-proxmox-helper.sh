@@ -9,8 +9,7 @@ set -e
 
 APP="Xibo CMS"
 OSTYPE="ubuntu"
-OSVERSION="OSVERSION="24.10-1"
-"
+OSVERSION="24.10-1"
 BRIDGE="vmbr0"
 XIBO_VERSION="release-4.0.9"
 
@@ -63,57 +62,121 @@ if ! pveam list $TEMPLATE_STORE | grep -q "$(basename $LATEST_TEMPLATE)"; then
   pveam download $TEMPLATE_STORE $LATEST_TEMPLATE
 fi
 
-
 # --- Container erstellen ---
 pct create $CTID $TEMPLATE \
   -hostname $HOSTNAME \
   -cores $CORE \
   -memory $MEMORY \
+  -swap 2048 \
   -rootfs local-lvm:${DISK} \
   -net0 name=eth0,bridge=$BRIDGE,ip=dhcp \
   -unprivileged 1 \
   -features nesting=1,keyctl=1 \
   -onboot 1 \
   -description "${APP} (Docker)" \
-  -password "xibo1"
+  -password "Xibo123!"
 
 pct start $CTID
-sleep 10
+echo "⏳ Warte auf Container-Start..."
+sleep 15
 
 # --- Installation im Container ---
 echo "🐳 Installiere Docker & ${APP}..."
 pct exec $CTID -- bash -c "
 set -e
-apt update && apt upgrade -y
-apt install -y docker.io docker-compose-v2 curl unzip wget
+export DEBIAN_FRONTEND=noninteractive
+
+# System aktualisieren
+apt-get update
+apt-get upgrade -y
+
+# Docker installieren
+apt-get install -y apt-transport-https ca-certificates curl gnupg
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \"\$VERSION_CODENAME\") stable\" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Xibo vorbereiten
 mkdir -p /opt/xibo && cd /opt/xibo
-wget -q https://github.com/xibosignage/xibo-docker/archive/refs/heads/$XIBO_VERSION.zip
-unzip -q $XIBO_VERSION.zip
-mv xibo-docker-$XIBO_VERSION/* .
-rm -rf xibo-docker-$XIBO_VERSION $XIBO_VERSION.zip
-cat > .env <<EOF
-MYSQL_PASSWORD=$MYSQL_PASSWORD
-MYSQL_ROOT_PASSWORD=$MYSQL_PASSWORD
-CMS_PORT=$XIBO_PORT
-CMS_SERVER_NAME=localhost
-CMS_DEV_MODE=false
+
+# Docker Compose File erstellen
+cat > docker-compose.yml << 'EOF'
+version: '3.8'
+
+services:
+  xibo-cms:
+    image: xibosignage/xibo-cms:4.0.9
+    ports:
+      - \"$XIBO_PORT:80\"
+    environment:
+      MYSQL_HOST: xibo-db
+      MYSQL_USER: xibo
+      MYSQL_PASSWORD: $MYSQL_PASSWORD
+      MYSQL_DATABASE: xibo
+      CMS_SERVER_NAME: localhost
+    volumes:
+      - xibo_uploads:/var/www/cms/uploads
+      - xibo_library:/var/www/cms/library
+      - xibo_cache:/var/www/cms/cache
+    depends_on:
+      - xibo-db
+    restart: unless-stopped
+
+  xibo-db:
+    image: mariadb:10.11
+    environment:
+      MYSQL_ROOT_PASSWORD: $MYSQL_PASSWORD
+      MYSQL_DATABASE: xibo
+      MYSQL_USER: xibo
+      MYSQL_PASSWORD: $MYSQL_PASSWORD
+    volumes:
+      - xibo_db:/var/lib/mysql
+    command: [
+        \"--character-set-server=utf8mb4\",
+        \"--collation-server=utf8mb4_unicode_ci\",
+        \"--skip-character-set-client-handshake\"
+    ]
+    restart: unless-stopped
+
+volumes:
+  xibo_uploads:
+  xibo_library:
+  xibo_db:
+  xibo_cache:
 EOF
+
+# Container starten
 docker compose up -d
+
+# Warte auf Start
+sleep 30
 "
 
 # --- IP ermitteln ---
+echo "⏳ Warte auf Netzwerk..."
+sleep 10
 IP=$(pct exec $CTID ip -4 addr show dev eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
 
-# --- Ausgabe ---
-clear
-echo -e "\e[1;32m"
-echo "✅ ${APP} erfolgreich installiert!"
-echo -e "\e[0m"
-echo "─────────────────────────────────────────────"
-echo "📦 Container-ID : $CTID"
-echo "🌐 Zugriff      : http://${IP}:${XIBO_PORT}"
-echo "🔑 Login        : admin / password"
-echo "🗄️  Datenpfad   : /opt/xibo"
-echo "─────────────────────────────────────────────"
-echo "💡 Nach Login bitte Passwort ändern!"
-echo "─────────────────────────────────────────────"
+# --- Final Check ---
+echo "🔍 Prüfe Installation..."
+if pct exec $CTID -- docker ps | grep -q xibo; then
+    echo -e "\e[1;32m"
+    echo "✅ ${APP} erfolgreich installiert!"
+    echo -e "\e[0m"
+    echo "─────────────────────────────────────────────"
+    echo "📦 Container-ID : $CTID"
+    echo "🌐 Zugriff      : http://${IP}:${XIBO_PORT}"
+    echo "🔑 Login        : admin / password"
+    echo "🗄️  Datenpfad   : /opt/xibo"
+    echo "─────────────────────────────────────────────"
+    echo "💡 Nach Login bitte Passwort ändern!"
+    echo "⚠️  Erster Start kann einige Minuten dauern!"
+    echo "─────────────────────────────────────────────"
+else
+    echo "❌ Installation fehlgeschlagen - prüfe Logs:"
+    pct exec $CTID -- docker logs \$(pct exec $CTID -- docker ps -q | head -1)
+fi
