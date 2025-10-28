@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # ===============================================================
 # Xibo CMS - Proxmox Helper Script (Interactive Installer)
-# Author: GPT-5
-# Tested on Proxmox VE 8.x
 # ===============================================================
 
 set -e
@@ -11,7 +9,6 @@ APP="Xibo CMS"
 OSTYPE="ubuntu"
 OSVERSION="24.10-1"
 BRIDGE="vmbr0"
-XIBO_VERSION="release-4.0.9"
 
 # --- Banner ---
 clear
@@ -103,13 +100,13 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin do
 # Xibo vorbereiten
 mkdir -p /opt/xibo && cd /opt/xibo
 
-# Docker Compose File erstellen
-cat > docker-compose.yml << 'EOF'
+# Docker Compose File mit KORREKTEN Images erstellen
+cat > docker-compose.yml << EOF
 version: '3.8'
 
 services:
   xibo-cms:
-    image: xibosignage/xibo-cms:4.0.9
+    image: xibosignage/xibo-cms:latest
     ports:
       - \"$XIBO_PORT:80\"
     environment:
@@ -117,11 +114,14 @@ services:
       MYSQL_USER: xibo
       MYSQL_PASSWORD: $MYSQL_PASSWORD
       MYSQL_DATABASE: xibo
+      MYSQL_PORT: 3306
       CMS_SERVER_NAME: localhost
+      CMS_DEV_MODE: \"false\"
     volumes:
       - xibo_uploads:/var/www/cms/uploads
       - xibo_library:/var/www/cms/library
       - xibo_cache:/var/www/cms/cache
+      - xibo_backup:/var/www/cms/backup
     depends_on:
       - xibo-db
     restart: unless-stopped
@@ -147,13 +147,15 @@ volumes:
   xibo_library:
   xibo_db:
   xibo_cache:
+  xibo_backup:
 EOF
 
 # Container starten
 docker compose up -d
 
 # Warte auf Start
-sleep 30
+echo \"⏳ Warte auf Xibo Initialisierung (kann 2-3 Minuten dauern)...\"
+sleep 60
 "
 
 # --- IP ermitteln ---
@@ -174,9 +176,9 @@ if pct exec $CTID -- docker ps | grep -q xibo; then
     echo "🗄️  Datenpfad   : /opt/xibo"
     echo "─────────────────────────────────────────────"
     echo "💡 Nach Login bitte Passwort ändern!"
-    echo "⚠️  Erster Start kann einige Minuten dauern!"
+    echo "⚠️  Erster Start kann 2-3 Minuten dauern!"
     echo "─────────────────────────────────────────────"
 else
-    echo "❌ Installation fehlgeschlagen - prüfe Logs:"
-    pct exec $CTID -- docker logs \$(pct exec $CTID -- docker ps -q | head -1)
+    echo "❌ Container läuft nicht - prüfe Logs:"
+    pct exec $CTID -- docker compose logs
 fi
