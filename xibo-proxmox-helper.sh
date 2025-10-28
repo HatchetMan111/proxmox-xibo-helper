@@ -75,7 +75,7 @@ pct create $CTID $TEMPLATE \
   -features nesting=1,keyctl=1 \
   -onboot 1 \
   -description "${APP} (Docker)" \
-  -password "xibo"
+  -password "xibo1"
 
 pct start $CTID
 sleep 10
