@@ -9,7 +9,8 @@ set -e
 
 APP="Xibo CMS"
 OSTYPE="ubuntu"
-OSVERSION="22.04"
+OSVERSION="OSVERSION="24.10-1"
+"
 BRIDGE="vmbr0"
 XIBO_VERSION="release-4.0.9"
 
