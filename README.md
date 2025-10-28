@@ -7,4 +7,4 @@ Erstellt automatisch einen LXC-Container mit Docker & Xibo CMS.
 
 ## ⚡ Schnellinstallation
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/HatchetMan111/proxmox-xibo-helper/edit/main/xibo-proxmox-helper.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/HatchetMan111/proxmox-xibo-helper/main/xibo-proxmox-helper.sh)
